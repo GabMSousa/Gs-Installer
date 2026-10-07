@@ -40,6 +40,8 @@ def main() -> int:
         "--add-data",
         "scripts;scripts",
         "--add-data",
+        "app/assets;app/assets",
+        "--add-data",
         "config.json;.",
         str(ENTRYPOINT),
     ]

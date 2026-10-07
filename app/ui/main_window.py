@@ -6,11 +6,12 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot, QSize
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget, QStyle,
 )
 
 from app.core.config import AppConfig
@@ -20,6 +21,7 @@ from app.services.installer import InstallerService
 from app.services.uninstaller import UninstallerService
 from app.services.winscript import WinScriptService
 from app.ui.theme import apply_theme
+from app.ui.icons import icon_for, icon_size
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,7 +85,8 @@ class MainWindow(QMainWindow):
         self.uninstaller = UninstallerService()
         self.log_widgets: list[QPlainTextEdit] = []
         self.setWindowTitle("NiniteTool · GS Installer")
-        self.resize(1100, 750)
+        self.setMinimumSize(980, 680)
+        self.resize(1220, 820)
         self._build()
         apply_theme(self._app(), config.theme)
 
@@ -104,26 +107,38 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._clean_page(), "Limpeza")
         self.tabs.addTab(self._uninstall_page(), "Desinstalar")
         self.tabs.addTab(self._settings_page(), "Configurações")
+        self.tabs.currentChanged.connect(self._set_active_nav)
         layout.addWidget(self.tabs, 1)
         self.setCentralWidget(root)
 
     def _rail(self):
         rail = QFrame(objectName="rail")
-        rail.setFixedWidth(220)
+        rail.setFixedWidth(238)
         box = QVBoxLayout(rail)
         box.setContentsMargins(18, 22, 18, 18)
         brand = QLabel("GS INSTALLER", objectName="brand")
         box.addWidget(brand)
         box.addWidget(QLabel("BANCADA OPERACIONAL", objectName="eyebrow"))
         box.addSpacing(24)
+        self.nav_buttons = []
         for index, (label, detail) in enumerate((("Instalar", "Catálogo oficial"), ("Limpeza", "WinScript offline"), ("Desinstalar", "Varredura profunda"), ("Configurações", "Preferências"))):
             button = QPushButton(f"{label}\n{detail}")
+            button.setObjectName("nav")
+            button.setIcon(QApplication.style().standardIcon((QStyle.StandardPixmap.SP_DirOpenIcon, QStyle.StandardPixmap.SP_BrowserReload, QStyle.StandardPixmap.SP_TrashIcon, QStyle.StandardPixmap.SP_FileDialogDetailedView)[index]))
+            button.setIconSize(QSize(22, 22))
+            self.nav_buttons.append(button)
             button.clicked.connect(lambda checked=False, i=index: self.tabs.setCurrentIndex(i))
             box.addWidget(button)
             box.addSpacing(5)
         box.addStretch()
         box.addWidget(QLabel("v0.1.0", objectName="muted"))
         return rail
+
+    def _set_active_nav(self, index: int):
+        for position, button in enumerate(getattr(self, "nav_buttons", [])):
+            button.setProperty("active", position == index)
+            button.style().unpolish(button)
+            button.style().polish(button)
 
     def _page_header(self, title: str, subtitle: str):
         wrapper = QWidget()
@@ -165,6 +180,11 @@ class MainWindow(QMainWindow):
         controls.addWidget(clear_category)
         outer.addLayout(controls)
         self.install_list = QListWidget()
+        self.install_list.setIconSize(icon_size(42))
+        self.install_list.setSpacing(4)
+        self.install_list.setViewMode(QListWidget.ViewMode.IconMode)
+        self.install_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.install_list.setGridSize(QSize(250, 92))
         self.install_list.itemChanged.connect(self._install_selection_changed)
         outer.addWidget(self.install_list, 1)
         action = QHBoxLayout()
@@ -208,6 +228,8 @@ class MainWindow(QMainWindow):
             label = next((name for name, value in self.CATEGORY_FILTERS if value == item.category), item.category)
             row = QListWidgetItem(f"{item.name}   ·   {label}")
             row.setData(Qt.ItemDataRole.UserRole, item.slug)
+            row.setIcon(icon_for(item.slug))
+            row.setSizeHint(QSize(232, 76))
             row.setToolTip(f"Fonte oficial: {item.official_url}")
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if item.slug in self.config.selected_installers else Qt.CheckState.Unchecked)
@@ -332,6 +354,8 @@ class MainWindow(QMainWindow):
         outer.addLayout(toolbar)
         split = QSplitter()
         self.script_list = QListWidget()
+        self.script_list.setIconSize(icon_size(30))
+        self.script_list.setSpacing(2)
         self.script_list.currentItemChanged.connect(self._preview_script)
         split.addWidget(self.script_list)
         self.script_preview = QPlainTextEdit()
@@ -367,6 +391,8 @@ class MainWindow(QMainWindow):
         for script in scripts:
             row = QListWidgetItem(f"{script.stem.replace('_', ' ')}   ·   {self.winscript.category_for(script)}")
             row.setData(Qt.ItemDataRole.UserRole, str(script))
+            row.setIcon(icon_for("powershell"))
+            row.setSizeHint(QSize(260, 48))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if str(script) in self.config.selected_cleanup_scripts else Qt.CheckState.Unchecked)
             self.script_list.addItem(row)
@@ -449,6 +475,8 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(remove)
         outer.addLayout(toolbar)
         self.program_list = QListWidget()
+        self.program_list.setIconSize(icon_size(34))
+        self.program_list.setSpacing(2)
         outer.addWidget(self.program_list, 1)
         outer.addWidget(QLabel("RELATÓRIO / ATIVIDADE", objectName="eyebrow"))
         outer.addWidget(self._activity())
@@ -461,6 +489,8 @@ class MainWindow(QMainWindow):
             size = f"{program.size_kb / 1024:.1f} MB" if program.size_kb else "tamanho desconhecido"
             row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}   ·   {size}")
             row.setData(Qt.ItemDataRole.UserRole, program)
+            row.setIcon(icon_for(program.name))
+            row.setSizeHint(QSize(320, 54))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
             self.program_list.addItem(row)
