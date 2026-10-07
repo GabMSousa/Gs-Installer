@@ -181,11 +181,11 @@ class MainWindow(QMainWindow):
         controls.addWidget(clear_category)
         outer.addLayout(controls)
         self.install_list = QListWidget()
-        self.install_list.setIconSize(icon_size(42))
-        self.install_list.setSpacing(4)
+        self.install_list.setIconSize(icon_size(52))
+        self.install_list.setSpacing(8)
         self.install_list.setViewMode(QListWidget.ViewMode.IconMode)
         self.install_list.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.install_list.setGridSize(QSize(250, 92))
+        self.install_list.setGridSize(QSize(292, 112))
         self.install_list.itemChanged.connect(self._install_selection_changed)
         outer.addWidget(self.install_list, 1)
         action = QHBoxLayout()
@@ -230,7 +230,7 @@ class MainWindow(QMainWindow):
             row = QListWidgetItem(f"{item.name}   ·   {label}")
             row.setData(Qt.ItemDataRole.UserRole, item.slug)
             row.setIcon(icon_for(item.slug))
-            row.setSizeHint(QSize(232, 76))
+            row.setSizeHint(QSize(274, 96))
             row.setToolTip(f"Fonte oficial: {item.official_url}")
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if item.slug in self.config.selected_installers else Qt.CheckState.Unchecked)
@@ -355,8 +355,8 @@ class MainWindow(QMainWindow):
         outer.addLayout(toolbar)
         split = QSplitter()
         self.script_list = QListWidget()
-        self.script_list.setIconSize(icon_size(30))
-        self.script_list.setSpacing(2)
+        self.script_list.setIconSize(icon_size(36))
+        self.script_list.setSpacing(5)
         self.script_list.currentItemChanged.connect(self._preview_script)
         split.addWidget(self.script_list)
         self.script_preview = QPlainTextEdit()
@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
             row = QListWidgetItem(f"{script.stem.replace('_', ' ')}   ·   {self.winscript.category_for(script)}")
             row.setData(Qt.ItemDataRole.UserRole, str(script))
             row.setIcon(icon_for("powershell"))
-            row.setSizeHint(QSize(260, 48))
+            row.setSizeHint(QSize(280, 60))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if str(script) in self.config.selected_cleanup_scripts else Qt.CheckState.Unchecked)
             self.script_list.addItem(row)
@@ -468,21 +468,39 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(clear)
         self.deep_remove = QCheckBox("Desinstalação profunda")
         toolbar.addWidget(self.deep_remove)
+        self.deep_remove.setChecked(True)
         self.force_remove = QCheckBox("Forçar se o oficial falhar")
         toolbar.addWidget(self.force_remove)
         toolbar.addStretch()
         remove = QPushButton("Desinstalar selecionados", objectName="danger")
         remove.clicked.connect(self._run_uninstall)
+        self.uninstall_button = remove
         toolbar.addWidget(remove)
         outer.addLayout(toolbar)
         self.program_list = QListWidget()
-        self.program_list.setIconSize(icon_size(34))
-        self.program_list.setSpacing(2)
+        self.program_list.setIconSize(icon_size(44))
+        self.program_list.setSpacing(6)
+        self.program_list.itemChanged.connect(self._uninstall_selection_changed)
         outer.addWidget(self.program_list, 1)
+        self.uninstall_count = QLabel("0 selecionados", objectName="muted")
+        outer.addWidget(self.uninstall_count)
+        self.uninstall_progress = QProgressBar()
+        self.uninstall_progress.setRange(0, 1)
+        self.uninstall_progress.setValue(0)
+        self.uninstall_progress.setFormat("Aguardando seleção")
+        outer.addWidget(self.uninstall_progress)
         outer.addWidget(QLabel("RELATÓRIO / ATIVIDADE", objectName="eyebrow"))
         outer.addWidget(self._activity())
         self._load_programs()
         return page
+
+    def _uninstall_selection_changed(self, _item):
+        self.uninstall_count.setText(f"{len(self._checked(self.program_list))} selecionados")
+
+    def _uninstall_progress_changed(self, completed: int, total: int):
+        self.uninstall_progress.setRange(0, total)
+        self.uninstall_progress.setValue(completed)
+        self.uninstall_progress.setFormat(f"{completed}/{total} programas processados")
 
     def _load_programs(self):
         self.program_list.clear()
@@ -491,7 +509,7 @@ class MainWindow(QMainWindow):
             row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}   ·   {size}")
             row.setData(Qt.ItemDataRole.UserRole, program)
             row.setIcon(icon_for(program.name))
-            row.setSizeHint(QSize(320, 54))
+            row.setSizeHint(QSize(420, 68))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
             self.program_list.addItem(row)
@@ -521,13 +539,20 @@ class MainWindow(QMainWindow):
             warning += " O modo forçado continuará quando o desinstalador oficial falhar."
         if QMessageBox.warning(self, "Confirmar desinstalação", warning, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
-        worker = Worker(self._uninstall_batch, selected, deep, force)
+        self.uninstall_button.setEnabled(False)
+        self.uninstall_progress.setRange(0, len(selected))
+        self.uninstall_progress.setValue(0)
+        self.uninstall_progress.setFormat(f"0/{len(selected)} programas processados")
+        worker = Worker(self._uninstall_batch, selected, deep, force, pass_progress=True)
         worker.signals.message.connect(self._append)
+        worker.signals.progress.connect(self._uninstall_progress_changed)
         worker.signals.result.connect(self._uninstall_finished)
+        worker.signals.error.connect(lambda error: self._append(f"Falha no lote: {error}"))
+        worker.signals.finished.connect(lambda: self.uninstall_button.setEnabled(True))
         self.pool.start(worker)
 
-    def _uninstall_batch(self, selected, deep, force, emit):
-        reports = self.uninstaller.uninstall_many(selected, deep=deep, force=force, emit=emit)
+    def _uninstall_batch(self, selected, deep, force, emit, progress, download_progress=None):
+        reports = self.uninstaller.uninstall_many(selected, deep=deep, force=force, emit=emit, progress=progress)
         emit(f"Relatório final: {len(reports)} programa(s) processado(s).")
         return reports
 

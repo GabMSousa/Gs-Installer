@@ -15,6 +15,7 @@ from app.models import InstalledProgram
 
 LOGGER = logging.getLogger(__name__)
 Emit = Callable[[str], None]
+Progress = Callable[[int, int], None]
 
 UNINSTALL_PATHS = (
     ("HKLM", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
@@ -90,10 +91,14 @@ class UninstallerManager:
                 LOGGER.warning("Registry scan failed for %s: %s", root, exc)
         return sorted(programs, key=lambda program: program.name.casefold())
 
-    def uninstall_many(self, programs: Iterable[InstalledProgram], deep: bool, force: bool, emit: Emit) -> list[UninstallReport]:
+    def uninstall_many(self, programs: Iterable[InstalledProgram], deep: bool, force: bool, emit: Emit, progress: Progress | None = None) -> list[UninstallReport]:
         reports: list[UninstallReport] = []
-        for program in programs:
+        selected = list(programs)
+        for index, program in enumerate(selected, start=1):
+            emit(f"[{index}/{len(selected)}] Iniciando: {program.name}")
             reports.append(self.uninstall(program, deep=deep, force=force, emit=emit))
+            if progress:
+                progress(index, len(selected))
         return reports
 
     def uninstall(self, program: InstalledProgram, deep: bool, force: bool, emit: Emit) -> UninstallReport:
@@ -110,7 +115,7 @@ class UninstallerManager:
             try:
                 completed = subprocess.run(command, shell=True, timeout=self.timeout_seconds, check=False, capture_output=True, text=True)
                 return_code = completed.returncode
-                official_ok = return_code == 0
+                official_ok = return_code in {0, 3010}
                 if completed.stdout:
                     emit(completed.stdout[-1000:].strip())
                 if completed.stderr:
@@ -170,13 +175,32 @@ class UninstallerManager:
             root = Path(raw_root)
             if not root.exists():
                 continue
-            try:
-                for child in root.iterdir():
-                    if child.is_dir() and self._matches(child.name, tokens) and child not in candidates:
-                        candidates.append(child)
-            except OSError:
-                continue
+            candidates.extend(self._scan_root(root, tokens, candidates))
         return candidates
+
+    @classmethod
+    def _scan_root(cls, root: Path, tokens: set[str], existing: list[Path], max_depth: int = 4) -> list[Path]:
+        """Find named residual files/directories without deleting broad vendor roots."""
+        found: list[Path] = []
+        root_depth = len(root.parts)
+        try:
+            for current, directories, files in os.walk(root, topdown=True, followlinks=False):
+                current_path = Path(current)
+                depth = len(current_path.parts) - root_depth
+                matching_dirs = [current_path / name for name in directories if cls._matches(name, tokens)]
+                for candidate in matching_dirs:
+                    if candidate not in existing and candidate not in found:
+                        found.append(candidate)
+                directories[:] = [name for name in directories if current_path / name not in matching_dirs]
+                if depth >= max_depth:
+                    directories[:] = []
+                for name in files:
+                    candidate = current_path / name
+                    if cls._matches(name, tokens) and candidate not in existing and candidate not in found:
+                        found.append(candidate)
+        except OSError:
+            return found
+        return found
 
     def scan_registry_residuals(self, program: InstalledProgram) -> list[RegistryCandidate]:
         if os.name != "nt":
@@ -201,11 +225,14 @@ class UninstallerManager:
     def remove_file_residuals(self, candidates: Iterable[Path], emit: Emit) -> list[str]:
         removed: list[str] = []
         for candidate in candidates:
-            if not self._safe_directory(candidate):
+            if not self._safe_path(candidate):
                 emit(f"Não removido por segurança: {candidate}")
                 continue
             try:
-                shutil.rmtree(candidate)
+                if candidate.is_dir():
+                    shutil.rmtree(candidate)
+                else:
+                    candidate.unlink()
                 removed.append(str(candidate))
                 emit(f"Removido: {candidate}")
             except OSError as exc:
@@ -283,6 +310,16 @@ class UninstallerManager:
         try:
             resolved = path.resolve()
             if not resolved.exists() or not resolved.is_dir() or len(resolved.parts) <= 2:
+                return False
+            return any(root != resolved and root in resolved.parents for root in cls._approved_roots())
+        except OSError:
+            return False
+
+    @classmethod
+    def _safe_path(cls, path: Path) -> bool:
+        try:
+            resolved = path.resolve()
+            if not resolved.exists() or resolved.is_symlink() or len(resolved.parts) <= 2:
                 return False
             return any(root != resolved and root in resolved.parents for root in cls._approved_roots())
         except OSError:

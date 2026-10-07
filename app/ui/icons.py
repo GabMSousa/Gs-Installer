@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QBrush
 
 ICON_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
 
@@ -13,12 +13,25 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
 
+BRAND_COLORS = {
+    "chrome": "#EA4335", "firefox": "#FF7139", "edge": "#0A84FF", "brave": "#FB542B",
+    "discord": "#5865F2", "telegram": "#26A5E4", "whatsapp": "#25D366", "zoom": "#2D8CFF",
+    "vlc": "#FF8800", "spotify": "#1DB954", "python": "#3776AB", "nodejs": "#339933",
+    "vscode": "#007ACC", "steam": "#1B2838", "git": "#F05032", "7zip": "#111111",
+}
+
+
 def _fallback(text: str) -> QIcon:
     pixmap = QPixmap(48, 48)
-    pixmap.fill(QColor("#20262D"))
+    token = _slug(text)
+    color = BRAND_COLORS.get(token, "#3A4652")
+    pixmap.fill(QColor("#11151A"))
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QColor("#E53935"))
+    painter.setBrush(QBrush(QColor(color)))
+    painter.setPen(QColor(color))
+    painter.drawRoundedRect(3, 3, 42, 42, 10, 10)
+    painter.setPen(QColor("#FFFFFF"))
     painter.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
     painter.drawText(pixmap.rect(), 0x84, (text or "GS")[:2].upper())
     painter.end()

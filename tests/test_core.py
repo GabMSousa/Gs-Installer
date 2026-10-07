@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -71,6 +72,34 @@ class TestWinScript(unittest.TestCase):
 
 
 class TestUninstallerSafety(unittest.TestCase):
+    def test_uninstall_many_reports_progress_for_each_program(self):
+        manager = UninstallerManager()
+        programs = [
+            InstalledProgram("Windows Defender", "", "Microsoft", ""),
+            InstalledProgram("Windows Security", "", "Microsoft", ""),
+        ]
+        progress = []
+        reports = manager.uninstall_many(programs, deep=True, force=False, emit=lambda message: None, progress=lambda done, total: progress.append((done, total)))
+        self.assertEqual(len(reports), 2)
+        self.assertEqual(progress, [(1, 2), (2, 2)])
+
+    def test_deep_scan_removes_files_and_directories_inside_approved_root(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            residual_dir = root / "DemoApp"
+            residual_dir.mkdir()
+            (residual_dir / "DemoApp.log").write_text("residual", encoding="utf-8")
+            residual_file = root / "DemoApp.cache"
+            residual_file.write_text("residual", encoding="utf-8")
+            manager = UninstallerManager()
+            program = InstalledProgram("Demo App", "", "", "", install_location=str(residual_dir))
+            with patch.object(UninstallerManager, "_approved_roots", classmethod(lambda cls: [root.resolve()])):
+                candidates = manager.scan_file_residuals(program)
+                removed = manager.remove_file_residuals(candidates, lambda message: None)
+            self.assertTrue(removed)
+            self.assertFalse(residual_dir.exists())
+            self.assertFalse(residual_file.exists())
+
     def test_protected_system_program(self):
         manager = UninstallerManager()
         protected = InstalledProgram("Windows Defender", "", "Microsoft", "")

@@ -34,10 +34,10 @@ QLineEdit, QComboBox, QListWidget, QTreeWidget, QPlainTextEdit { background: #0E
 QLineEdit:focus, QComboBox:focus, QListWidget:focus, QPlainTextEdit:focus { border: 1px solid #E53935; }
 QComboBox QAbstractItemView { background: #11151A; color: #FFFFFF; border: 1px solid #3A444F; selection-background-color: #7F2022; }
 QListWidget { padding: 6px; outline: none; }
-QListWidget::item { background: #12171D; border: 1px solid #27313A; border-radius: 10px; padding: 10px; margin: 4px; }
+QListWidget::item { background: #12171D; border: 1px solid #27313A; border-radius: 10px; padding: 14px; margin: 6px; }
 QListWidget::item:hover { background: #191F26; border-color: #8B2B2D; }
 QListWidget::item:selected { background: #321517; border: 1px solid #E53935; color: #FFFFFF; }
-QCheckBox { spacing: 8px; padding: 5px 2px; }
+QCheckBox { spacing: 10px; padding: 8px 4px; }
 QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #68727D; background: #0D1115; }
 QCheckBox::indicator:hover { border-color: #E53935; }
 QCheckBox::indicator:checked { background: #E53935; border-color: #E53935; }
