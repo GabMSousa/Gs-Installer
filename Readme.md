@@ -39,7 +39,7 @@ python -m src.main
 ## Build
 
 ```powershell
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name GSInstaller app/main.py
+python build.py
 ```
 
 O executável será criado em `dist\GSInstaller.exe`.

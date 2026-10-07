@@ -43,9 +43,10 @@ class AppConfig:
         paths = AppPaths()
         paths.ensure()
         config = cls(paths=paths)
-        if paths.config.exists():
+        config_source = paths.config if paths.config.exists() else paths.bundled_config
+        if config_source.exists():
             try:
-                data = json.loads(paths.config.read_text(encoding="utf-8"))
+                data = json.loads(config_source.read_text(encoding="utf-8"))
                 config.installers_path = str(data.get("installers_path", data.get("installer_path", config.installers_path)))
                 config.cache_path = str(data.get("cache_path", config.cache_path))
                 config.theme = str(data.get("theme", config.theme))

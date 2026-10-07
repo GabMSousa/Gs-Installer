@@ -1,4 +1,4 @@
-"""Reproducible Windows onedir build for NiniteTool."""
+"""Reproducible Windows one-file build for GS Installer."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def main() -> int:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onedir",
+        "--onefile",
         "--windowed",
         "--name",
         "NiniteTool",
@@ -46,16 +46,8 @@ def main() -> int:
     print("Executando:", " ".join(command))
     completed = subprocess.run(command, cwd=ROOT, check=False)
     if completed.returncode == 0:
-        output_dir = DIST_DIR / "NiniteTool"
-        # PyInstaller 6 stores --add-data files in _internal. The application
-        # intentionally keeps mutable portable state beside the executable.
-        runtime_config = output_dir / "config.json"
-        shutil.copy2(ROOT / "config.json", runtime_config)
-        runtime_scripts = output_dir / "scripts"
-        if runtime_scripts.exists():
-            shutil.rmtree(runtime_scripts)
-        shutil.copytree(ROOT / "scripts", runtime_scripts)
-        print(f"Build concluído: {DIST_DIR / 'NiniteTool' / 'NiniteTool.exe'}")
+        output = DIST_DIR / "NiniteTool.exe"
+        print(f"Build concluído: {output}")
     return completed.returncode
 
 
