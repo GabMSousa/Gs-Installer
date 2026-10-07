@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from app.models import SoftwareItem
 
 
@@ -44,3 +47,33 @@ CATALOG = [
     _item("qbittorrent", "qBittorrent", "Outros", "https://www.qbittorrent.org/download", "qbittorrent/qBittorrent"),
     _item("winrar", "WinRAR", "Outros", "https://www.win-rar.com/download.html"),
 ]
+
+
+def local_catalog(installer_dir: Path | str) -> list[SoftwareItem]:
+    """Expose every local EXE/MSI as a selectable catalog item."""
+    root = Path(installer_dir)
+    if not root.exists():
+        return []
+    items: list[SoftwareItem] = []
+    seen: set[str] = set()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.casefold() not in {".exe", ".msi"}:
+            continue
+        relative = path.relative_to(root)
+        category = relative.parts[0] if len(relative.parts) > 1 else "Instaladores locais"
+        name = re.sub(r"[_-]+", " ", path.stem).strip()
+        name = re.sub(r"\s+", " ", name)
+        slug = re.sub(r"[^a-z0-9]+", "", name.casefold()) or "local"
+        base_slug = slug
+        suffix = 2
+        while slug in seen or any(item.slug == slug for item in CATALOG):
+            slug = f"{base_slug}{suffix}"
+            suffix += 1
+        seen.add(slug)
+        items.append(SoftwareItem(slug, name, category, "", local_path=str(path)))
+    return items
+
+
+def build_catalog(installer_dir: Path | str) -> list[SoftwareItem]:
+    """Return the official catalog followed by all local installer files."""
+    return [*CATALOG, *local_catalog(installer_dir)]

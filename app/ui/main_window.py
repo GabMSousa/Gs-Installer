@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.config import AppConfig
-from app.data.catalog import CATALOG
+from app.data.catalog import build_catalog
 from app.services.downloads import DownloadService
 from app.services.installer import InstallerService
 from app.services.uninstaller import UninstallerService
@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
     def __init__(self, config: AppConfig):
         super().__init__()
         self.config = config
+        self.catalog = build_catalog(config.installer_path)
         self.pool = QThreadPool.globalInstance()
         self.downloader = DownloadService(config.paths.cache)
         self.installer = InstallerService(self.downloader)
@@ -171,6 +172,9 @@ class MainWindow(QMainWindow):
         self.category = QComboBox()
         for label, value in self.CATEGORY_FILTERS:
             self.category.addItem(label, value)
+        known_categories = {value for _, value in self.CATEGORY_FILTERS if value}
+        for value in sorted({item.category for item in self.catalog} - known_categories):
+            self.category.addItem(value, value)
         self.category.currentIndexChanged.connect(self._refresh_install_list)
         controls.addWidget(self.category)
         select_category = QPushButton("Selecionar categoria")
@@ -191,6 +195,9 @@ class MainWindow(QMainWindow):
         action = QHBoxLayout()
         self.install_count = QLabel("0 selecionados", objectName="muted")
         action.addWidget(self.install_count)
+        self.reinstall_checkbox = QCheckBox("Reinstalar/atualizar já instalados")
+        self.reinstall_checkbox.setToolTip("Use quando quiser executar novamente um instalador local ou oficial.")
+        action.addWidget(self.reinstall_checkbox)
         action.addStretch()
         self.install_button = QPushButton("Instalar selecionados", objectName="primary")
         self.install_button.clicked.connect(self._run_install)
@@ -221,7 +228,7 @@ class MainWindow(QMainWindow):
         category = self.category.currentData()
         self.install_list.blockSignals(True)
         self.install_list.clear()
-        for item in CATALOG:
+        for item in self.catalog:
             if query not in item.name.lower() and query not in item.category.lower():
                 continue
             if category and category != item.category:
@@ -266,7 +273,7 @@ class MainWindow(QMainWindow):
             widget.item(i).setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
 
     def _run_install(self):
-        items = {item.slug: item for item in CATALOG}
+        items = {item.slug: item for item in self.catalog}
         selected = [items[row.data(Qt.ItemDataRole.UserRole)] for row in self._checked(self.install_list)]
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um programa para instalar.")
@@ -289,7 +296,7 @@ class MainWindow(QMainWindow):
         self.install_progress.setFormat(f"0/{len(selected)} programas concluídos")
         self.download_progress.setValue(0)
         self.download_progress.setFormat("Download: aguardando")
-        worker = Worker(self._install_batch, selected, pass_progress=True)
+        worker = Worker(self._install_batch, selected, self.reinstall_checkbox.isChecked(), pass_progress=True)
         worker.signals.message.connect(self._append)
         worker.signals.progress.connect(self._install_progress_changed)
         worker.signals.download_progress.connect(self._download_progress_changed)
@@ -298,13 +305,14 @@ class MainWindow(QMainWindow):
         worker.signals.finished.connect(lambda: self.install_button.setEnabled(True))
         self.pool.start(worker)
 
-    def _install_batch(self, selected, emit, progress, download_progress):
+    def _install_batch(self, selected, force_reinstall, emit, progress, download_progress):
         results = self.installer.install_batch(
             selected,
             Path(self.config.installer_path),
             emit,
             progress,
             download_progress,
+            force_reinstall=force_reinstall,
         )
         emit("Lote finalizado.")
         return results
@@ -623,6 +631,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Caminho inválido", message)
             return
         self.config.save()
+        self.catalog = build_catalog(self.config.installer_path)
+        self._refresh_install_list()
         logging.getLogger().setLevel(getattr(logging, self.config.log_level, logging.INFO))
         apply_theme(self._app(), self.config.theme)
         self._append(f"Configurações salvas. {message}")

@@ -69,7 +69,7 @@ class InstallerManager:
         self.timeout_seconds = timeout_seconds
         self.emit = emit or (lambda message: LOGGER.info(message))
 
-    def install_selected(self, programs: Iterable[SoftwareItem | str | dict], emit: Emit | None = None, progress: Progress | None = None, download_progress: Progress | None = None) -> list[InstallationResult]:
+    def install_selected(self, programs: Iterable[SoftwareItem | str | dict], emit: Emit | None = None, progress: Progress | None = None, download_progress: Progress | None = None, force_reinstall: bool = False) -> list[InstallationResult]:
         """Install every selected item and continue after individual failures."""
         report: list[InstallationResult] = []
         write = emit or self.emit
@@ -78,7 +78,7 @@ class InstallerManager:
         for index, selected in enumerate(selected_items, start=1):
             item = self._coerce_item(selected)
             try:
-                result = self.install_one(item, emit=write, download_progress=download_progress)
+                result = self.install_one(item, emit=write, download_progress=download_progress, force_reinstall=force_reinstall)
             except Exception as exc:
                 LOGGER.exception("Unexpected installer failure for %s", item.slug)
                 result = InstallationResult(item.name, InstallationStatus.FAILED, f"erro inesperado: {exc}")
@@ -88,9 +88,9 @@ class InstallerManager:
                 progress(index, total)
         return report
 
-    def install_one(self, item: SoftwareItem, emit: Emit | None = None, download_progress: Progress | None = None) -> InstallationResult:
+    def install_one(self, item: SoftwareItem, emit: Emit | None = None, download_progress: Progress | None = None, force_reinstall: bool = False) -> InstallationResult:
         write = emit or self.emit
-        if self.is_already_installed(item):
+        if self.is_already_installed(item) and not force_reinstall:
             message = "já está instalado; instalação ignorada"
             write(f"{item.name}: {message}")
             return InstallationResult(item.name, InstallationStatus.ALREADY_INSTALLED, message)
@@ -141,6 +141,10 @@ class InstallerManager:
         return self.downloader.acquire(item, self.installer_dir, progress=download_progress)
 
     def find_local_installer(self, item: SoftwareItem) -> Path | None:
+        if item.local_path:
+            exact = Path(item.local_path)
+            if exact.is_file() and exact.suffix.casefold() in {".exe", ".msi"}:
+                return exact
         if not self.installer_dir.exists():
             return None
         tokens = {self._slug(item.slug), self._slug(item.name)}
@@ -208,7 +212,7 @@ class InstallerManager:
         if isinstance(selected, SoftwareItem):
             return selected
         if isinstance(selected, dict):
-            return SoftwareItem(str(selected.get("slug", selected.get("id", ""))), str(selected["name"]), str(selected.get("category", "")), str(selected.get("official_url", "")), github_repo=selected.get("github_repo"))
+            return SoftwareItem(str(selected.get("slug", selected.get("id", ""))), str(selected["name"]), str(selected.get("category", "")), str(selected.get("official_url", "")), github_repo=selected.get("github_repo"), local_path=str(selected.get("local_path", "")))
         value = str(selected)
         normalized = InstallerManager._slug(value)
         for item in CATALOG:

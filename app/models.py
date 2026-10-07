@@ -11,6 +11,7 @@ class SoftwareItem:
     official_url: str
     silent_args: tuple[str, ...] = ("/S", "/quiet", "/silent", "/verysilent")
     github_repo: str | None = None
+    local_path: str = ""
 
 
 @dataclass
