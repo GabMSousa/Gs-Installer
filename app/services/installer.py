@@ -18,5 +18,9 @@ class InstallerService:
         result = manager.install_one(item, emit=emit)
         return result.status in {InstallationStatus.SUCCESS, InstallationStatus.ALREADY_INSTALLED}
 
+    def install_batch(self, items, installer_dir: Path, emit, progress, download_progress):
+        manager = InstallerManager(self.downloader, installer_dir, emit=emit)
+        return manager.install_selected(items, emit=emit, progress=progress, download_progress=download_progress)
+
 
 __all__ = ["InstallerManager", "InstallerService"]

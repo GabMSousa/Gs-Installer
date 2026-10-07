@@ -22,3 +22,9 @@ Ao lado do executável, a aplicação cria `cache\`, `scripts\winscript\`, `logs
 Sites que não oferecem um asset direto estável são abertos como fonte oficial para download manual. Isso evita raspar páginas ou executar um arquivo de origem incerta. Hash SHA-256 pode ser calculado pelo serviço de download quando a integração de metadados for adicionada.
 
 WinScript e a desinstalação profunda exigem revisão humana: leia a prévia dos scripts e confirme os candidatos residuais antes de habilitar remoção forçada.
+
+## Instalação silenciosa
+
+Ao iniciar um lote, a aplicação confirma a quantidade selecionada e executa o trabalho em segundo plano. A barra superior mostra programas concluídos; a segunda mostra o download atual quando a fonte informa o tamanho. O log registra horário, origem do instalador, saída do processo e resumo final.
+
+MSI usa `msiexec /qn /norestart`. Instaladores EXE usam argumentos por fornecedor, como `/S`, `/silent /install`, `/quiet` ou `/VERYSILENT /NORESTART`. Alguns fornecedores podem ignorar esses argumentos ou exigir interação; nesses casos a execução é registrada como falha e não bloqueia os próximos itens do lote. Prefira instaladores offline/standalone quando o fornecedor oferecer essa opção.

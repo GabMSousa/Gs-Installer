@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from app.core.config import AppConfig
@@ -26,18 +28,25 @@ class WorkerSignals(QObject):
     result = Signal(object)
     error = Signal(str)
     finished = Signal()
+    progress = Signal(int, int)
+    download_progress = Signal(int, int)
 
 
 class Worker(QRunnable):
-    def __init__(self, fn, *args, **kwargs):
+    def __init__(self, fn, *args, pass_progress=False, **kwargs):
         super().__init__()
         self.fn, self.args, self.kwargs = fn, args, kwargs
+        self.pass_progress = pass_progress
         self.signals = WorkerSignals()
 
     @Slot()
     def run(self):
         try:
-            self.signals.result.emit(self.fn(*self.args, emit=self.signals.message.emit, **self.kwargs))
+            call_kwargs = dict(self.kwargs, emit=self.signals.message.emit)
+            if self.pass_progress:
+                call_kwargs["progress"] = self.signals.progress.emit
+                call_kwargs["download_progress"] = self.signals.download_progress.emit
+            self.signals.result.emit(self.fn(*self.args, **call_kwargs))
         except Exception as exc:
             LOGGER.exception("Worker failure")
             self.signals.error.emit(str(exc))
@@ -161,10 +170,23 @@ class MainWindow(QMainWindow):
         self.install_count = QLabel("0 selecionados", objectName="muted")
         action.addWidget(self.install_count)
         action.addStretch()
-        install = QPushButton("Instalar selecionados", objectName="primary")
-        install.clicked.connect(self._run_install)
-        action.addWidget(install)
+        self.install_button = QPushButton("Instalar selecionados", objectName="primary")
+        self.install_button.clicked.connect(self._run_install)
+        action.addWidget(self.install_button)
         outer.addLayout(action)
+        progress_box = QVBoxLayout()
+        progress_box.addWidget(QLabel("PROGRESSO GERAL", objectName="eyebrow"))
+        self.install_progress = QProgressBar()
+        self.install_progress.setRange(0, 1)
+        self.install_progress.setValue(0)
+        self.install_progress.setFormat("Aguardando seleção")
+        progress_box.addWidget(self.install_progress)
+        self.download_progress = QProgressBar()
+        self.download_progress.setRange(0, 100)
+        self.download_progress.setValue(0)
+        self.download_progress.setFormat("Download: aguardando")
+        progress_box.addWidget(self.download_progress)
+        outer.addLayout(progress_box)
         outer.addWidget(QLabel("ATIVIDADE", objectName="eyebrow"))
         outer.addWidget(self._activity())
         self._refresh_install_list()
@@ -211,17 +233,63 @@ class MainWindow(QMainWindow):
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um programa para instalar.")
             return
+        answer = QMessageBox.question(
+            self,
+            "Confirmar instalação",
+            f"Deseja instalar {len(selected)} programa(s) em modo silencioso?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
         self.config.selected_installers = [item.slug for item in selected]
         self.config.save()
         self._append("— início da instalação em lote —")
-        worker = Worker(self._install_batch, selected)
+        self.install_button.setEnabled(False)
+        self.install_progress.setRange(0, len(selected))
+        self.install_progress.setValue(0)
+        self.install_progress.setFormat(f"0/{len(selected)} programas concluídos")
+        self.download_progress.setValue(0)
+        self.download_progress.setFormat("Download: aguardando")
+        worker = Worker(self._install_batch, selected, pass_progress=True)
         worker.signals.message.connect(self._append)
+        worker.signals.progress.connect(self._install_progress_changed)
+        worker.signals.download_progress.connect(self._download_progress_changed)
+        worker.signals.result.connect(self._install_finished)
+        worker.signals.error.connect(lambda error: self._append(f"Falha no lote: {error}"))
+        worker.signals.finished.connect(lambda: self.install_button.setEnabled(True))
         self.pool.start(worker)
 
-    def _install_batch(self, selected, emit):
-        results = [self.installer.install(item, Path(self.config.installer_path), emit) for item in selected]
-        emit(f"Lote finalizado: {sum(results)}/{len(results)} concluídos")
+    def _install_batch(self, selected, emit, progress, download_progress):
+        results = self.installer.install_batch(
+            selected,
+            Path(self.config.installer_path),
+            emit,
+            progress,
+            download_progress,
+        )
+        emit("Lote finalizado.")
         return results
+
+    def _install_progress_changed(self, completed: int, total: int):
+        self.install_progress.setValue(completed)
+        self.install_progress.setFormat(f"{completed}/{total} programas concluídos")
+
+    def _download_progress_changed(self, downloaded: int, total: int):
+        if total > 0:
+            percent = min(100, int(downloaded * 100 / total))
+            self.download_progress.setValue(percent)
+            self.download_progress.setFormat(f"Download: {percent}% ({downloaded:,}/{total:,} bytes)")
+        else:
+            self.download_progress.setFormat(f"Download: {downloaded:,} bytes")
+
+    def _install_finished(self, results):
+        counts = Counter(result.status.value for result in results)
+        summary = f"Resumo: {counts.get('sucesso', 0)} sucesso(s), {counts.get('falha', 0)} falha(s), {counts.get('já instalado', 0)} já instalado(s)."
+        self._append(summary)
+        self.download_progress.setValue(0)
+        self.download_progress.setFormat("Download: concluído")
+        QMessageBox.information(self, "Instalação finalizada", summary)
 
     def _clean_page(self):
         page = QWidget()
@@ -409,8 +477,9 @@ class MainWindow(QMainWindow):
             apply_theme(self._app(), self.config.theme)
 
     def _append(self, message: str):
+        stamped = f"{datetime.now():%H:%M:%S}  {message}"
         for log in self.log_widgets:
-            log.appendPlainText(message)
+            log.appendPlainText(stamped)
 
     def closeEvent(self, event):
         if hasattr(self, "installer_path_edit"):

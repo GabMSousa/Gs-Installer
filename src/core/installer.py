@@ -22,6 +22,7 @@ from app.services.downloads import DownloadService
 
 LOGGER = logging.getLogger(__name__)
 Emit = Callable[[str], None]
+Progress = Callable[[int, int], None]
 
 
 class InstallationStatus(str, Enum):
@@ -68,29 +69,33 @@ class InstallerManager:
         self.timeout_seconds = timeout_seconds
         self.emit = emit or (lambda message: LOGGER.info(message))
 
-    def install_selected(self, programs: Iterable[SoftwareItem | str | dict], emit: Emit | None = None) -> list[InstallationResult]:
+    def install_selected(self, programs: Iterable[SoftwareItem | str | dict], emit: Emit | None = None, progress: Progress | None = None, download_progress: Progress | None = None) -> list[InstallationResult]:
         """Install every selected item and continue after individual failures."""
         report: list[InstallationResult] = []
         write = emit or self.emit
-        for selected in programs:
+        selected_items = list(programs)
+        total = len(selected_items)
+        for index, selected in enumerate(selected_items, start=1):
             item = self._coerce_item(selected)
             try:
-                result = self.install_one(item, emit=write)
+                result = self.install_one(item, emit=write, download_progress=download_progress)
             except Exception as exc:
                 LOGGER.exception("Unexpected installer failure for %s", item.slug)
                 result = InstallationResult(item.name, InstallationStatus.FAILED, f"erro inesperado: {exc}")
                 write(f"{item.name}: {result.message}")
             report.append(result)
+            if progress:
+                progress(index, total)
         return report
 
-    def install_one(self, item: SoftwareItem, emit: Emit | None = None) -> InstallationResult:
+    def install_one(self, item: SoftwareItem, emit: Emit | None = None, download_progress: Progress | None = None) -> InstallationResult:
         write = emit or self.emit
         if self.is_already_installed(item):
             message = "já está instalado; instalação ignorada"
             write(f"{item.name}: {message}")
             return InstallationResult(item.name, InstallationStatus.ALREADY_INSTALLED, message)
         try:
-            installer_path, source_message = self._resolve_installer(item)
+            installer_path, source_message = self._resolve_installer(item, download_progress=download_progress)
             write(f"{item.name}: {source_message}")
             if installer_path is None:
                 message = f"instalador não encontrado; fonte oficial: {item.official_url}"
@@ -120,20 +125,20 @@ class InstallerManager:
             write(f"{item.name}: {message}")
             return InstallationResult(item.name, InstallationStatus.FAILED, message)
 
-    def _resolve_installer(self, item: SoftwareItem) -> tuple[Path | None, str]:
+    def _resolve_installer(self, item: SoftwareItem, download_progress: Progress | None = None) -> tuple[Path | None, str]:
         local = self.find_local_installer(item)
         if local is not None and self.is_local_installer_current(local):
             return local, f"instalador local encontrado: {local.name}"
         if local is not None:
             self.emit(f"{item.name}: instalador local sem metadados de versão; buscando provider oficial")
             try:
-                release = self.downloader.github_asset(item)
+                release = self.downloader.github_asset(item, progress=download_progress)
                 if release is not None:
                     return release, f"release oficial baixado para o cache: {release.name}"
             except Exception as exc:
                 LOGGER.warning("Official fallback failed for %s: %s", item.slug, exc)
             return None, "instalador local inválido e nenhum asset oficial disponível"
-        return self.downloader.acquire(item, self.installer_dir)
+        return self.downloader.acquire(item, self.installer_dir, progress=download_progress)
 
     def find_local_installer(self, item: SoftwareItem) -> Path | None:
         if not self.installer_dir.exists():
