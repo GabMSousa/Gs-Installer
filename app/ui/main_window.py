@@ -165,7 +165,7 @@ class MainWindow(QMainWindow):
         controls.addWidget(clear_category)
         outer.addLayout(controls)
         self.install_list = QListWidget()
-        self.install_list.itemChanged.connect(lambda _: self._update_count())
+        self.install_list.itemChanged.connect(self._install_selection_changed)
         outer.addWidget(self.install_list, 1)
         action = QHBoxLayout()
         self.install_count = QLabel("0 selecionados", objectName="muted")
@@ -218,6 +218,20 @@ class MainWindow(QMainWindow):
     def _update_count(self):
         if hasattr(self, "install_count"):
             self.install_count.setText(f"{len(self._checked(self.install_list))} selecionados")
+
+    def _install_selection_changed(self, _item):
+        self._update_count()
+        if not hasattr(self, "install_list"):
+            return
+        selected = set(self.config.selected_installers)
+        for row in self._checked(self.install_list):
+            selected.add(row.data(Qt.ItemDataRole.UserRole))
+        for index in range(self.install_list.count()):
+            row = self.install_list.item(index)
+            if row.checkState() == Qt.CheckState.Unchecked:
+                selected.discard(row.data(Qt.ItemDataRole.UserRole))
+        self.config.selected_installers = sorted(selected)
+        self.config.save()
 
     @staticmethod
     def _checked(widget):
@@ -513,6 +527,20 @@ class MainWindow(QMainWindow):
         self.cache_checkbox = QCheckBox("Usar cache local após o primeiro download")
         self.cache_checkbox.setChecked(self.config.cache_enabled)
         form.addRow("Downloads", self.cache_checkbox)
+        self.auto_updates_checkbox = QCheckBox("Verificar atualizações da ferramenta ao iniciar")
+        self.auto_updates_checkbox.setChecked(self.config.auto_check_updates)
+        form.addRow("Atualizações", self.auto_updates_checkbox)
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self.log_level_combo.setCurrentText(self.config.log_level)
+        form.addRow("Nível de log", self.log_level_combo)
+        cache_label = QLabel(str(self.config.paths.cache))
+        cache_label.setObjectName("muted")
+        cache_label.setToolTip("Cache portátil usado para downloads e WinScript")
+        form.addRow("Pasta de cache", cache_label)
+        facilitator = QLabel("O caminho local é apenas um facilitador; a ferramenta também funciona baixando fontes oficiais.", objectName="muted")
+        facilitator.setWordWrap(True)
+        form.addRow("Nota", facilitator)
         outer.addLayout(form)
         save = QPushButton("Salvar configurações", objectName="primary")
         save.clicked.connect(self._save_settings)
@@ -532,17 +560,26 @@ class MainWindow(QMainWindow):
         self.config.installer_path = self.installer_path_edit.text().strip() or self.config.installer_path
         self.config.theme = self.theme_combo.currentData()
         self.config.cache_enabled = self.cache_checkbox.isChecked()
+        self.config.auto_check_updates = self.auto_updates_checkbox.isChecked()
+        self.config.log_level = self.log_level_combo.currentText()
+        valid, message = self.config.validate_installers_path(create=True)
+        if not valid:
+            QMessageBox.warning(self, "Caminho inválido", message)
+            return
         self.config.save()
+        logging.getLogger().setLevel(getattr(logging, self.config.log_level, logging.INFO))
         apply_theme(self._app(), self.config.theme)
-        self._append("Configurações salvas.")
+        self._append(f"Configurações salvas. {message}")
 
     def _theme_changed(self):
         if hasattr(self, "theme_combo"):
             self.config.theme = self.theme_combo.currentData()
             apply_theme(self._app(), self.config.theme)
+            self.config.save()
 
     def _append(self, message: str):
         stamped = f"{datetime.now():%H:%M:%S}  {message}"
+        logging.getLogger("ui").info(message)
         for log in self.log_widgets:
             log.appendPlainText(stamped)
 
@@ -551,5 +588,7 @@ class MainWindow(QMainWindow):
             self.config.installer_path = self.installer_path_edit.text().strip() or self.config.installer_path
             self.config.theme = self.theme_combo.currentData()
             self.config.cache_enabled = self.cache_checkbox.isChecked()
+            self.config.auto_check_updates = self.auto_updates_checkbox.isChecked()
+            self.config.log_level = self.log_level_combo.currentText()
         self.config.save()
         super().closeEvent(event)

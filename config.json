@@ -1,7 +1,10 @@
 {
+  "installers_path": "D:\\Ferramentas\\Instaladores",
   "theme": "dark",
-  "installer_path": "D:\\Ferramentas\\Instaladores",
-  "selected_installers": [],
+  "cache_path": "./cache",
+  "log_level": "INFO",
+  "auto_check_updates": true,
+  "last_selected_apps": [],
   "selected_cleanup_scripts": [],
   "profile": "",
   "cache_enabled": true

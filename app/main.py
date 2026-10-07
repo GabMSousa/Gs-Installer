@@ -11,7 +11,7 @@ from app.ui.main_window import MainWindow
 
 def main() -> int:
     config = AppConfig.load()
-    configure_logging(config.paths.logs)
+    configure_logging(config.paths.logs, config.log_level)
     app = QApplication(sys.argv)
     app.setApplicationName("GS Installer")
     app.setOrganizationName("GS Installer")
