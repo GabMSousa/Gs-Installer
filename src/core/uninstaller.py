@@ -82,6 +82,7 @@ class UninstallerManager:
                                     install_location=self._value(child, "InstallLocation"),
                                     registry_key=f"{root}\\{child_name}",
                                     quiet_uninstall_string=self._value(child, "QuietUninstallString"),
+                                    display_icon=self._value(child, "DisplayIcon"),
                                     size_kb=size,
                                     registry_hive=hive_name,
                                 ))
@@ -168,6 +169,12 @@ class UninstallerManager:
             location = Path(program.install_location.strip('"'))
             if self._safe_directory(location):
                 candidates.append(location)
+        if program.display_icon:
+            icon_path = Path(os.path.expandvars(program.display_icon.split(",", 1)[0].strip('"')))
+            if icon_path.exists() and icon_path.is_file():
+                parent = icon_path.parent
+                if self._safe_directory(parent) and self._matches(parent.name, self._name_tokens(program)):
+                    candidates.append(parent)
         tokens = self._name_tokens(program)
         for raw_root in roots:
             if not raw_root:
@@ -211,13 +218,19 @@ class UninstallerManager:
         tokens = self._name_tokens(program)
         locations = list(UNINSTALL_PATHS) + [("HKLM", r"SOFTWARE"), ("HKCU", r"SOFTWARE")]
         candidates: list[RegistryCandidate] = []
+        if program.registry_key and program.registry_hive in hives:
+            parent_path, _, key_name = program.registry_key.rpartition("\\")
+            if parent_path and key_name:
+                candidates.append(RegistryCandidate(program.registry_hive, parent_path, key_name, key_name))
         for hive_name, root in locations:
             try:
                 with winreg.OpenKey(hives[hive_name], root) as parent:
                     for index in range(winreg.QueryInfoKey(parent)[0]):
                         child_name = winreg.EnumKey(parent, index)
                         if self._matches(child_name, tokens):
-                            candidates.append(RegistryCandidate(hive_name, root, child_name, child_name))
+                            candidate = RegistryCandidate(hive_name, root, child_name, child_name)
+                            if candidate not in candidates:
+                                candidates.append(candidate)
             except OSError:
                 continue
         return candidates
@@ -289,7 +302,12 @@ class UninstallerManager:
         # Do not use publisher names for filesystem deletion: a vendor such as
         # Microsoft or Google would otherwise match an entire shared folder.
         token = UninstallerManager._slug(program.name)
-        return {token} if len(token) >= 4 else set()
+        if len(token) < 4:
+            return set()
+        generic = {"microsoft", "adobe", "google", "apple", "intel", "company", "corporation", "apps", "desktop", "update", "runtime"}
+        words = [UninstallerManager._slug(word) for word in re.findall(r"[A-Za-z0-9]+", program.name)]
+        compounds = {word for word in words if len(word) >= 5 and word not in generic}
+        return {token, *compounds}
 
     @staticmethod
     def _matches(value: str, tokens: set[str]) -> bool:
@@ -318,8 +336,10 @@ class UninstallerManager:
     @classmethod
     def _safe_path(cls, path: Path) -> bool:
         try:
+            if path.is_symlink():
+                return False
             resolved = path.resolve()
-            if not resolved.exists() or resolved.is_symlink() or len(resolved.parts) <= 2:
+            if not resolved.exists() or len(resolved.parts) <= 2:
                 return False
             return any(root != resolved and root in resolved.parents for root in cls._approved_roots())
         except OSError:

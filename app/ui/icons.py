@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, QFileInfo
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QBrush
+from PySide6.QtWidgets import QFileIconProvider
 
 ICON_DIR = Path(__file__).resolve().parents[1] / "assets" / "icons"
 
@@ -52,6 +54,18 @@ def icon_for(value: str, size: int = 42) -> QIcon:
         if not icon.isNull():
             return icon
     return _fallback(value)
+
+
+def icon_for_installed(display_icon: str, name: str) -> QIcon:
+    """Prefer the real executable/icon registered by Windows for uninstall rows."""
+    if display_icon:
+        raw_path = display_icon.split(",", 1)[0].strip('"')
+        path = Path(os.path.expandvars(raw_path)).expanduser()
+        if path.exists() and path.is_file():
+            icon = QFileIconProvider().icon(QFileInfo(str(path)))
+            if not icon.isNull():
+                return icon
+    return icon_for(name)
 
 
 def icon_size(size: int = 42) -> QSize:

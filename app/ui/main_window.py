@@ -21,7 +21,7 @@ from app.services.installer import InstallerService
 from app.services.uninstaller import UninstallerService
 from app.services.winscript import WinScriptService
 from app.ui.theme import apply_theme
-from app.ui.icons import icon_for, icon_size
+from app.ui.icons import icon_for, icon_for_installed, icon_size
 
 LOGGER = logging.getLogger(__name__)
 
@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
             size = f"{program.size_kb / 1024:.1f} MB" if program.size_kb else "tamanho desconhecido"
             row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}   ·   {size}")
             row.setData(Qt.ItemDataRole.UserRole, program)
-            row.setIcon(icon_for(program.name))
+            row.setIcon(icon_for_installed(program.display_icon, program.name))
             row.setSizeHint(QSize(420, 68))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)

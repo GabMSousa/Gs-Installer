@@ -22,5 +22,6 @@ class InstalledProgram:
     install_location: str = ""
     registry_key: str = ""
     quiet_uninstall_string: str = ""
+    display_icon: str = ""
     size_kb: int | None = None
     registry_hive: str = ""
