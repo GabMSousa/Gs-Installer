@@ -47,4 +47,4 @@ class AppConfig:
             "profile": self.profile,
             "cache_enabled": self.cache_enabled,
         }
-        self.paths.config.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.paths.config.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

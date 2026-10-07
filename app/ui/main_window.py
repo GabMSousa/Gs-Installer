@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -308,7 +309,12 @@ class MainWindow(QMainWindow):
         toolbar.addStretch()
         run = QPushButton("Executar selecionados", objectName="primary")
         run.clicked.connect(self._run_scripts)
-        toolbar.addWidget(run)
+        self.clean_run_button = run
+        toolbar.addWidget(self.clean_run_button)
+        self.clean_cancel_button = QPushButton("Cancelar")
+        self.clean_cancel_button.setEnabled(False)
+        self.clean_cancel_button.clicked.connect(self._cancel_scripts)
+        toolbar.addWidget(self.clean_cancel_button)
         outer.addLayout(toolbar)
         split = QSplitter()
         self.script_list = QListWidget()
@@ -319,6 +325,12 @@ class MainWindow(QMainWindow):
         self.script_preview.setPlaceholderText("Selecione um script para visualizar o que ele faz.")
         split.addWidget(self.script_preview)
         outer.addWidget(split, 1)
+        outer.addWidget(QLabel("PROGRESSO", objectName="eyebrow"))
+        self.clean_progress = QProgressBar()
+        self.clean_progress.setRange(0, 1)
+        self.clean_progress.setValue(0)
+        self.clean_progress.setFormat("Aguardando seleção")
+        outer.addWidget(self.clean_progress)
         outer.addWidget(QLabel("ATIVIDADE", objectName="eyebrow"))
         outer.addWidget(self._activity())
         self._populate_scripts(self.winscript.list_scripts())
@@ -339,7 +351,7 @@ class MainWindow(QMainWindow):
             self.script_list.addItem(empty)
             return
         for script in scripts:
-            row = QListWidgetItem(script.stem.replace("_", " "))
+            row = QListWidgetItem(f"{script.stem.replace('_', ' ')}   ·   {self.winscript.category_for(script)}")
             row.setData(Qt.ItemDataRole.UserRole, str(script))
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if str(script) in self.config.selected_cleanup_scripts else Qt.CheckState.Unchecked)
@@ -359,14 +371,41 @@ class MainWindow(QMainWindow):
             return
         self.config.selected_cleanup_scripts = [str(p) for p in selected]
         self.config.save()
-        worker = Worker(self._scripts_batch, selected)
+        self.clean_cancel_event = threading.Event()
+        self.clean_run_button.setEnabled(False)
+        self.clean_cancel_button.setEnabled(True)
+        self.clean_progress.setRange(0, len(selected))
+        self.clean_progress.setValue(0)
+        self.clean_progress.setFormat(f"0/{len(selected)} scripts concluídos")
+        worker = Worker(self._scripts_batch, selected, pass_progress=True)
         worker.signals.message.connect(self._append)
+        worker.signals.progress.connect(self._clean_progress_changed)
+        worker.signals.download_progress.connect(lambda done, total: None)
+        worker.signals.result.connect(self._scripts_finished)
+        worker.signals.finished.connect(self._scripts_worker_finished)
         self.pool.start(worker)
 
-    def _scripts_batch(self, selected, emit):
-        results = [self.winscript.execute(script, emit) for script in selected]
-        emit(f"Limpeza finalizada: {sum(results)}/{len(results)} scripts concluídos")
+    def _scripts_batch(self, selected, emit, progress, download_progress):
+        results = self.winscript.execute_selected(selected, emit, progress=progress, cancel_event=self.clean_cancel_event)
+        emit("Limpeza finalizada.")
         return results
+
+    def _clean_progress_changed(self, completed: int, total: int):
+        self.clean_progress.setValue(completed)
+        self.clean_progress.setFormat(f"{completed}/{total} scripts concluídos")
+
+    def _scripts_finished(self, results):
+        counts = {status: sum(result.status == status for result in results) for status in ("sucesso", "falha", "cancelado")}
+        self._append(f"Resumo da limpeza: {counts['sucesso']} sucesso(s), {counts['falha']} falha(s), {counts['cancelado']} cancelado(s).")
+
+    def _scripts_worker_finished(self):
+        self.clean_run_button.setEnabled(True)
+        self.clean_cancel_button.setEnabled(False)
+
+    def _cancel_scripts(self):
+        if hasattr(self, "clean_cancel_event"):
+            self.clean_cancel_event.set()
+            self._append("Cancelamento solicitado; aguardando o script atual encerrar…")
 
     def _uninstall_page(self):
         page = QWidget()
