@@ -17,6 +17,14 @@ O modo `onedir` mantém DLLs e arquivos auxiliares visíveis para facilitar supo
 
 Problemas conhecidos desta versão: páginas oficiais sem asset direto exigem download manual; operações de limpeza/desinstalação precisam de revisão e privilégios adequados; os cinco instaladores reais da Tarefa 05 não estavam disponíveis na pasta local usada para testes.
 
+## Testes locais
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Os testes automatizados cobrem cache, argumentos MSI, continuidade de lotes, cancelamento do WinScript e proteções do desinstalador. Instalações e desinstalações reais continuam sendo validações manuais, pois alteram o sistema operacional.
+
 ## Organização portátil
 
 Ao lado do executável, a aplicação cria `cache\`, `scripts\winscript\`, `logs\` e `config.json`. A pasta local padrão de instaladores é `D:\Ferramentas\Instaladores`, mas pode ser alterada em Configuração e não é obrigatória.

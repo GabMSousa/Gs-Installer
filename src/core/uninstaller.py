@@ -274,10 +274,17 @@ class UninstallerManager:
         return re.sub(r"[^a-z0-9]+", "", value.casefold())
 
     @staticmethod
-    def _safe_directory(path: Path) -> bool:
+    def _approved_roots() -> list[Path]:
+        roots = [os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)"), os.environ.get("APPDATA"), os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramData")]
+        return [Path(root).resolve() for root in roots if root]
+
+    @classmethod
+    def _safe_directory(cls, path: Path) -> bool:
         try:
             resolved = path.resolve()
-            return resolved.exists() and resolved.is_dir() and len(resolved.parts) > 2
+            if not resolved.exists() or not resolved.is_dir() or len(resolved.parts) <= 2:
+                return False
+            return any(root != resolved and root in resolved.parents for root in cls._approved_roots())
         except OSError:
             return False
 
