@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "mode": "operate",
+  "direction": "operational-field-instrument",
+  "palette": {
+    "dark": {"canvas": "#111417", "surface": "#1A1F23", "text": "#F2EFE8", "muted": "#8E9AA3", "accent": "#E2A93B", "success": "#42B883", "danger": "#D95C5C"},
+    "light": {"canvas": "#F2EFE8", "surface": "#FBFAF7", "text": "#20252A", "muted": "#62707A", "accent": "#A56F00", "success": "#18794E", "danger": "#B12B2B"}
+  },
+  "type": {"ui": "Segoe UI", "data": "Cascadia Mono"},
+  "surface": "main-window",
+  "platform": "windows"
+}

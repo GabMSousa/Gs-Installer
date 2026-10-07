@@ -1,0 +1,1 @@
+"""Static application catalog data."""

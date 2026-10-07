@@ -1,0 +1,1 @@
+"""GS Installer application package."""
