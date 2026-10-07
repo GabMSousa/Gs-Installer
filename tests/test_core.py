@@ -46,6 +46,18 @@ class TestInstaller(unittest.TestCase):
 
 
 class TestWinScript(unittest.TestCase):
+    def test_lists_all_supported_script_formats(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (scripts / "cleanup.ps1").write_text("Write-Output 'test'", encoding="utf-8")
+            (scripts / "cleanup.bat").write_text("@echo off", encoding="utf-8")
+            (scripts / "cleanup.cmd").write_text("@echo off", encoding="utf-8")
+            (scripts / "notes.txt").write_text("not executable", encoding="utf-8")
+            manager = WinScriptManager(root / "cache", scripts)
+            self.assertEqual({path.suffix for path in manager.list_scripts()}, {".ps1", ".bat", ".cmd"})
+
     def test_cancel_before_first_script(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

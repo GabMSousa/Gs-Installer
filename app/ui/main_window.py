@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         for index, (label, detail) in enumerate((("Instalar", "Catálogo oficial"), ("Limpeza", "WinScript offline"), ("Desinstalar", "Varredura profunda"), ("Configurações", "Preferências"))):
             button = QPushButton(f"{label}\n{detail}")
             button.setObjectName("nav")
+            button.setProperty("active", index == 0)
             button.setIcon(QApplication.style().standardIcon((QStyle.StandardPixmap.SP_DirOpenIcon, QStyle.StandardPixmap.SP_BrowserReload, QStyle.StandardPixmap.SP_TrashIcon, QStyle.StandardPixmap.SP_FileDialogDetailedView)[index]))
             button.setIconSize(QSize(22, 22))
             self.nav_buttons.append(button)

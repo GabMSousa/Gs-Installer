@@ -28,6 +28,8 @@ class ScriptExecutionResult:
 
 
 class WinScriptManager:
+    SCRIPT_SUFFIXES = {".ps1", ".bat", ".cmd"}
+
     def __init__(self, cache_dir: Path | str, scripts_dir: Path | str, timeout_seconds: int = 900) -> None:
         self.cache_dir = Path(cache_dir)
         self.scripts_dir = Path(scripts_dir)
@@ -35,8 +37,10 @@ class WinScriptManager:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def list_scripts(self) -> list[Path]:
-        """List every PowerShell script while preserving the repository tree."""
-        return sorted(self.scripts_dir.rglob("*.ps1")) if self.scripts_dir.exists() else []
+        """List every executable script while preserving the repository tree."""
+        if not self.scripts_dir.exists():
+            return []
+        return sorted(path for path in self.scripts_dir.rglob("*") if path.is_file() and path.suffix.casefold() in self.SCRIPT_SUFFIXES)
 
     def category_for(self, script: Path) -> str:
         """Use the first meaningful repository folder as the UI category."""
@@ -91,7 +95,10 @@ class WinScriptManager:
 
     def execute(self, script: Path, emit: Emit, cancel_event: threading.Event | None = None) -> ScriptExecutionResult:
         emit(f"Executando {script.name} ({self.category_for(script)})…")
-        command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+        if script.suffix.casefold() == ".ps1":
+            command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+        else:
+            command = ["cmd.exe", "/d", "/c", str(script)]
         process: subprocess.Popen[str] | None = None
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
