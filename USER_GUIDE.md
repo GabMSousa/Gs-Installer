@@ -32,3 +32,7 @@ MSI usa `msiexec /qn /norestart`. Instaladores EXE usam argumentos por fornecedo
 ## WinScript
 
 Na aba Limpeza, o repositório oficial é baixado para `scripts/winscript/` somente quando ainda não há scripts locais. A estrutura original é preservada e a execução funciona offline depois disso. Selecione um script para ver a prévia, confirme o aviso de segurança e use Cancelar para impedir o próximo script; o script atualmente em execução pode precisar encerrar antes que o cancelamento seja efetivo.
+
+## Desinstalação profunda
+
+A aba Desinstalar lê as três áreas de desinstalação do Registro e exibe nome, versão, publicador e tamanho estimado. O modo normal executa `QuietUninstallString` ou `UninstallString`. O modo profundo, após confirmação, procura a pasta de instalação e diretórios de mesmo nome em Program Files, AppData, LocalAppData e ProgramData, além de chaves relacionadas no Registro; o relatório identifica candidatos e remoções. O modo forçado continua quando o desinstalador oficial falha, mas não desativa a lista de programas protegidos do Windows.

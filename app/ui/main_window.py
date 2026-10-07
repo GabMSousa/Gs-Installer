@@ -412,6 +412,10 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(page)
         outer.addWidget(self._page_header("Desinstalação profunda", "Execute o desinstalador oficial primeiro e revise residuais antes de qualquer remoção forçada."))
         toolbar = QHBoxLayout()
+        self.uninstall_search = QLineEdit()
+        self.uninstall_search.setPlaceholderText("Buscar programa instalado…")
+        self.uninstall_search.textChanged.connect(self._filter_programs)
+        toolbar.addWidget(self.uninstall_search, 1)
         refresh = QPushButton("Ler programas instalados")
         refresh.clicked.connect(self._load_programs)
         toolbar.addWidget(refresh)
@@ -421,7 +425,9 @@ class MainWindow(QMainWindow):
         clear = QPushButton("Limpar seleção")
         clear.clicked.connect(lambda: self._set_all(self.program_list, False))
         toolbar.addWidget(clear)
-        self.force_remove = QCheckBox("Desinstalação profunda")
+        self.deep_remove = QCheckBox("Desinstalação profunda")
+        toolbar.addWidget(self.deep_remove)
+        self.force_remove = QCheckBox("Forçar se o oficial falhar")
         toolbar.addWidget(self.force_remove)
         toolbar.addStretch()
         remove = QPushButton("Desinstalar selecionados", objectName="danger")
@@ -438,33 +444,53 @@ class MainWindow(QMainWindow):
     def _load_programs(self):
         self.program_list.clear()
         for program in self.uninstaller.list_programs():
-            row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}")
+            size = f"{program.size_kb / 1024:.1f} MB" if program.size_kb else "tamanho desconhecido"
+            row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}   ·   {size}")
             row.setData(Qt.ItemDataRole.UserRole, program)
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
             self.program_list.addItem(row)
         self._append(f"{self.program_list.count()} programas encontrados no registro de desinstalação")
 
+    def _filter_programs(self):
+        if not hasattr(self, "program_list"):
+            return
+        query = self.uninstall_search.text().casefold()
+        for index in range(self.program_list.count()):
+            row = self.program_list.item(index)
+            program = row.data(Qt.ItemDataRole.UserRole)
+            haystack = f"{program.name} {program.publisher} {program.version}".casefold()
+            row.setHidden(bool(query and query not in haystack))
+
     def _run_uninstall(self):
-        selected = [row.data(Qt.ItemDataRole.UserRole) for row in self._checked(self.program_list)]
+        selected = [row.data(Qt.ItemDataRole.UserRole) for row in self._checked(self.program_list) if not row.isHidden()]
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um programa.")
             return
-        warning = "Isso executará os desinstaladores e listará residuais."
-        if self.force_remove.isChecked():
-            warning += " A desinstalação profunda removerá diretórios residuais aprovados."
+        deep = self.deep_remove.isChecked()
+        force = self.force_remove.isChecked()
+        warning = "Isso executará os desinstaladores oficiais."
+        if deep:
+            warning += " A desinstalação profunda fará varredura e remoção de arquivos e chaves residuais."
+        if force:
+            warning += " O modo forçado continuará quando o desinstalador oficial falhar."
         if QMessageBox.warning(self, "Confirmar desinstalação", warning, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
-        worker = Worker(self._uninstall_batch, selected, self.force_remove.isChecked())
+        worker = Worker(self._uninstall_batch, selected, deep, force)
         worker.signals.message.connect(self._append)
+        worker.signals.result.connect(self._uninstall_finished)
         self.pool.start(worker)
 
-    def _uninstall_batch(self, selected, force, emit):
-        removed = []
-        for program in selected:
-            removed.extend(self.uninstaller.uninstall(program, force, emit))
-        emit(f"Relatório final: {len(removed)} caminhos removidos; candidatos não forçados permanecem para revisão.")
-        return removed
+    def _uninstall_batch(self, selected, deep, force, emit):
+        reports = self.uninstaller.uninstall_many(selected, deep=deep, force=force, emit=emit)
+        emit(f"Relatório final: {len(reports)} programa(s) processado(s).")
+        return reports
+
+    def _uninstall_finished(self, reports):
+        protected = sum(report.protected for report in reports)
+        files = sum(len(report.files_removed) for report in reports)
+        registry = sum(len(report.registry_removed) for report in reports)
+        self._append(f"Resíduos removidos: {files} arquivo(s), {registry} chave(s); protegidos ignorados: {protected}.")
 
     def _settings_page(self):
         page = QWidget()
