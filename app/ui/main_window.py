@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
-import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-    QPushButton, QScrollArea, QSizePolicy, QSplitter, QStackedWidget, QVBoxLayout,
-    QWidget,
+    QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from app.core.config import AppConfig
@@ -49,6 +46,23 @@ class Worker(QRunnable):
 
 
 class MainWindow(QMainWindow):
+    """Four-tab operator workbench for install, cleanup, uninstall and settings."""
+
+    CATEGORY_FILTERS = [
+        ("Todas as categorias", None),
+        ("Web Browsers", "Navegadores"),
+        ("Messaging", "Mensageria"),
+        ("Media", "Mídia"),
+        ("Imaging", "Imaging"),
+        ("Documents", "Documents"),
+        ("Security", "Segurança / Limpeza"),
+        ("Utilities", "Utilitários"),
+        ("Developer Tools", "Desenvolvimento"),
+        ("Compression", "Compression"),
+        ("Online Storage", "Online Storage"),
+        ("Other", "Outros"),
+    ]
+
     def __init__(self, config: AppConfig):
         super().__init__()
         self.config = config
@@ -57,13 +71,14 @@ class MainWindow(QMainWindow):
         self.installer = InstallerService(self.downloader)
         self.winscript = WinScriptService(config.paths.cache, config.paths.scripts)
         self.uninstaller = UninstallerService()
-        self.log_widgets = []
-        self.setWindowTitle("GS Installer · bancada operacional")
-        self.resize(1280, 780)
+        self.log_widgets: list[QPlainTextEdit] = []
+        self.setWindowTitle("NiniteTool · GS Installer")
+        self.resize(1100, 750)
         self._build()
         apply_theme(self._app(), config.theme)
 
-    def _app(self):
+    @staticmethod
+    def _app():
         from PySide6.QtWidgets import QApplication
         return QApplication.instance()
 
@@ -73,11 +88,13 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(16)
         layout.addWidget(self._rail())
-        self.stack = QStackedWidget()
-        self.stack.addWidget(self._install_page())
-        self.stack.addWidget(self._clean_page())
-        self.stack.addWidget(self._uninstall_page())
-        layout.addWidget(self.stack, 1)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self._install_page(), "Instalar")
+        self.tabs.addTab(self._clean_page(), "Limpeza")
+        self.tabs.addTab(self._uninstall_page(), "Desinstalar")
+        self.tabs.addTab(self._settings_page(), "Configurações")
+        layout.addWidget(self.tabs, 1)
         self.setCentralWidget(root)
 
     def _rail(self):
@@ -88,17 +105,14 @@ class MainWindow(QMainWindow):
         brand = QLabel("GS INSTALLER", objectName="brand")
         box.addWidget(brand)
         box.addWidget(QLabel("BANCADA OPERACIONAL", objectName="eyebrow"))
-        box.addSpacing(28)
-        for index, (label, detail) in enumerate((("Instalar", "Catálogo oficial"), ("Limpar", "WinScript offline"), ("Desinstalar", "Varredura profunda"))):
+        box.addSpacing(24)
+        for index, (label, detail) in enumerate((("Instalar", "Catálogo oficial"), ("Limpeza", "WinScript offline"), ("Desinstalar", "Varredura profunda"), ("Configurações", "Preferências"))):
             button = QPushButton(f"{label}\n{detail}")
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            button.clicked.connect(lambda checked=False, i=index: self.stack.setCurrentIndex(i))
+            button.clicked.connect(lambda checked=False, i=index: self.tabs.setCurrentIndex(i))
             box.addWidget(button)
             box.addSpacing(5)
         box.addStretch()
-        settings = QPushButton("Configuração")
-        settings.clicked.connect(self._settings)
-        box.addWidget(settings)
+        box.addWidget(QLabel("v0.1.0", objectName="muted"))
         return rail
 
     def _page_header(self, title: str, subtitle: str):
@@ -115,33 +129,34 @@ class MainWindow(QMainWindow):
         log = QPlainTextEdit()
         log.setReadOnly(True)
         log.setPlaceholderText("A atividade da bancada aparecerá aqui…")
-        log.setMinimumHeight(150)
+        log.setMinimumHeight(140)
         self.log_widgets.append(log)
         return log
 
     def _install_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.addWidget(self._page_header("Instalar em lote", "Selecione aplicações. A ferramenta procura no caminho local e depois consulta releases oficiais quando há um provider seguro."))
+        outer.addWidget(self._page_header("Instalar em lote", "Escolha programas por categoria. O instalador prioriza arquivos locais e fontes oficiais."))
         controls = QHBoxLayout()
         self.install_search = QLineEdit()
         self.install_search.setPlaceholderText("Buscar programa…")
         self.install_search.textChanged.connect(self._refresh_install_list)
         controls.addWidget(self.install_search, 1)
         self.category = QComboBox()
-        self.category.addItem("Todas as categorias")
-        self.category.addItems(sorted({item.category for item in CATALOG}))
-        self.category.currentTextChanged.connect(self._refresh_install_list)
+        for label, value in self.CATEGORY_FILTERS:
+            self.category.addItem(label, value)
+        self.category.currentIndexChanged.connect(self._refresh_install_list)
         controls.addWidget(self.category)
-        select_all = QPushButton("Selecionar visíveis")
-        select_all.clicked.connect(lambda: self._set_all(self.install_list, True))
-        controls.addWidget(select_all)
+        select_category = QPushButton("Selecionar categoria")
+        select_category.clicked.connect(lambda: self._set_all(self.install_list, True))
+        controls.addWidget(select_category)
+        clear_category = QPushButton("Limpar categoria")
+        clear_category.clicked.connect(lambda: self._set_all(self.install_list, False))
+        controls.addWidget(clear_category)
         outer.addLayout(controls)
-        splitter = QSplitter()
         self.install_list = QListWidget()
         self.install_list.itemChanged.connect(lambda _: self._update_count())
-        splitter.addWidget(self.install_list)
-        outer.addWidget(splitter, 1)
+        outer.addWidget(self.install_list, 1)
         action = QHBoxLayout()
         self.install_count = QLabel("0 selecionados", objectName="muted")
         action.addWidget(self.install_count)
@@ -159,16 +174,17 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "install_list"):
             return
         query = self.install_search.text().lower()
-        category = self.category.currentText()
+        category = self.category.currentData()
         self.install_list.blockSignals(True)
         self.install_list.clear()
         for item in CATALOG:
             if query not in item.name.lower() and query not in item.category.lower():
                 continue
-            if category != "Todas as categorias" and category != item.category:
+            if category and category != item.category:
                 continue
-            row = QListWidgetItem(f"{item.name}   ·   {item.category}")
-            row.setData(32, item.slug)
+            label = next((name for name, value in self.CATEGORY_FILTERS if value == item.category), item.category)
+            row = QListWidgetItem(f"{item.name}   ·   {label}")
+            row.setData(Qt.ItemDataRole.UserRole, item.slug)
             row.setToolTip(f"Fonte oficial: {item.official_url}")
             row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if item.slug in self.config.selected_installers else Qt.CheckState.Unchecked)
@@ -191,7 +207,7 @@ class MainWindow(QMainWindow):
 
     def _run_install(self):
         items = {item.slug: item for item in CATALOG}
-        selected = [items[row.data(32)] for row in self._checked(self.install_list)]
+        selected = [items[row.data(Qt.ItemDataRole.UserRole)] for row in self._checked(self.install_list)]
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um programa para instalar.")
             return
@@ -203,20 +219,24 @@ class MainWindow(QMainWindow):
         self.pool.start(worker)
 
     def _install_batch(self, selected, emit):
-        results = []
-        for item in selected:
-            results.append(self.installer.install(item, Path(self.config.installer_path), emit))
+        results = [self.installer.install(item, Path(self.config.installer_path), emit) for item in selected]
         emit(f"Lote finalizado: {sum(results)}/{len(results)} concluídos")
         return results
 
     def _clean_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.addWidget(self._page_header("Limpar com WinScript", "Scripts ficam em cache depois do primeiro download. Pré-visualize o conteúdo antes de executar qualquer mudança."))
+        outer.addWidget(self._page_header("Limpeza com WinScript", "Revise o script antes de executar. O conteúdo fica disponível offline após o primeiro download."))
         toolbar = QHBoxLayout()
         refresh = QPushButton("Atualizar scripts oficiais")
         refresh.clicked.connect(self._load_scripts)
         toolbar.addWidget(refresh)
+        select = QPushButton("Selecionar tudo")
+        select.clicked.connect(lambda: self._set_all(self.script_list, True))
+        toolbar.addWidget(select)
+        clear = QPushButton("Limpar seleção")
+        clear.clicked.connect(lambda: self._set_all(self.script_list, False))
+        toolbar.addWidget(clear)
         toolbar.addStretch()
         run = QPushButton("Executar selecionados", objectName="primary")
         run.clicked.connect(self._run_scripts)
@@ -252,20 +272,21 @@ class MainWindow(QMainWindow):
             return
         for script in scripts:
             row = QListWidgetItem(script.stem.replace("_", " "))
-            row.setData(32, str(script))
+            row.setData(Qt.ItemDataRole.UserRole, str(script))
+            row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Checked if str(script) in self.config.selected_cleanup_scripts else Qt.CheckState.Unchecked)
             self.script_list.addItem(row)
 
     def _preview_script(self, current, previous):
-        if current:
-            self.script_preview.setPlainText(self.winscript.preview(Path(current.data(32))))
+        if current and current.data(Qt.ItemDataRole.UserRole):
+            self.script_preview.setPlainText(self.winscript.preview(Path(current.data(Qt.ItemDataRole.UserRole))))
 
     def _run_scripts(self):
-        selected = [Path(row.data(32)) for row in self._checked(self.script_list)]
+        selected = [Path(row.data(Qt.ItemDataRole.UserRole)) for row in self._checked(self.script_list) if row.data(Qt.ItemDataRole.UserRole)]
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um script.")
             return
-        answer = QMessageBox.warning(self, "Confirmar limpeza", "Os scripts selecionados podem alterar configurações do Windows. Você revisou a prévia e deseja continuar?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        answer = QMessageBox.warning(self, "Confirmar limpeza", "Os scripts podem alterar configurações do Windows. Você revisou a prévia?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
         self.config.selected_cleanup_scripts = [str(p) for p in selected]
@@ -282,12 +303,18 @@ class MainWindow(QMainWindow):
     def _uninstall_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
-        outer.addWidget(self._page_header("Desinstalar profundamente", "O desinstalador oficial é executado primeiro. Residuais são exibidos antes de qualquer remoção forçada."))
+        outer.addWidget(self._page_header("Desinstalação profunda", "Execute o desinstalador oficial primeiro e revise residuais antes de qualquer remoção forçada."))
         toolbar = QHBoxLayout()
         refresh = QPushButton("Ler programas instalados")
         refresh.clicked.connect(self._load_programs)
         toolbar.addWidget(refresh)
-        self.force_remove = QCheckBox("Desinstalação forçada")
+        select = QPushButton("Selecionar tudo")
+        select.clicked.connect(lambda: self._set_all(self.program_list, True))
+        toolbar.addWidget(select)
+        clear = QPushButton("Limpar seleção")
+        clear.clicked.connect(lambda: self._set_all(self.program_list, False))
+        toolbar.addWidget(clear)
+        self.force_remove = QCheckBox("Desinstalação profunda")
         toolbar.addWidget(self.force_remove)
         toolbar.addStretch()
         remove = QPushButton("Desinstalar selecionados", objectName="danger")
@@ -296,29 +323,29 @@ class MainWindow(QMainWindow):
         outer.addLayout(toolbar)
         self.program_list = QListWidget()
         outer.addWidget(self.program_list, 1)
-        outer.addWidget(QLabel("ATIVIDADE", objectName="eyebrow"))
+        outer.addWidget(QLabel("RELATÓRIO / ATIVIDADE", objectName="eyebrow"))
         outer.addWidget(self._activity())
         self._load_programs()
         return page
 
     def _load_programs(self):
         self.program_list.clear()
-        programs = self.uninstaller.list_programs()
-        for program in programs:
+        for program in self.uninstaller.list_programs():
             row = QListWidgetItem(f"{program.name}   ·   {program.version or 'versão desconhecida'}   ·   {program.publisher or 'fabricante desconhecido'}")
-            row.setData(32, program)
+            row.setData(Qt.ItemDataRole.UserRole, program)
+            row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
             self.program_list.addItem(row)
-        self._append(f"{len(programs)} programas encontrados no registro de desinstalação")
+        self._append(f"{self.program_list.count()} programas encontrados no registro de desinstalação")
 
     def _run_uninstall(self):
-        selected = [row.data(32) for row in self._checked(self.program_list)]
+        selected = [row.data(Qt.ItemDataRole.UserRole) for row in self._checked(self.program_list)]
         if not selected:
             QMessageBox.information(self, "Nada selecionado", "Marque pelo menos um programa.")
             return
         warning = "Isso executará os desinstaladores e listará residuais."
         if self.force_remove.isChecked():
-            warning += " A remoção forçada apagará diretórios residuais aprovados."
+            warning += " A desinstalação profunda removerá diretórios residuais aprovados."
         if QMessageBox.warning(self, "Confirmar desinstalação", warning, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         worker = Worker(self._uninstall_batch, selected, self.force_remove.isChecked())
@@ -332,17 +359,63 @@ class MainWindow(QMainWindow):
         emit(f"Relatório final: {len(removed)} caminhos removidos; candidatos não forçados permanecem para revisão.")
         return removed
 
-    def _settings(self):
-        path, _ = QFileDialog.getExistingDirectory(self, "Escolha a pasta local de instaladores", self.config.installer_path), ""
+    def _settings_page(self):
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.addWidget(self._page_header("Configurações", "Preferências são salvas em config.json ao lado do executável para preservar o modo portátil."))
+        form = QFormLayout()
+        self.installer_path_edit = QLineEdit(self.config.installer_path)
+        browse = QPushButton("Escolher pasta…")
+        browse.clicked.connect(self._browse_installers)
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.installer_path_edit, 1)
+        path_row.addWidget(browse)
+        form.addRow("Instaladores locais", path_row)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.setCurrentIndex(0 if self.config.theme == "dark" else 1)
+        self.theme_combo.currentIndexChanged.connect(self._theme_changed)
+        form.addRow("Tema", self.theme_combo)
+        self.cache_checkbox = QCheckBox("Usar cache local após o primeiro download")
+        self.cache_checkbox.setChecked(self.config.cache_enabled)
+        form.addRow("Downloads", self.cache_checkbox)
+        outer.addLayout(form)
+        save = QPushButton("Salvar configurações", objectName="primary")
+        save.clicked.connect(self._save_settings)
+        outer.addWidget(save)
+        outer.addSpacing(20)
+        outer.addWidget(QLabel("SOBRE", objectName="eyebrow"))
+        outer.addWidget(QLabel("NiniteTool / GS Installer\nv0.1.0 · ferramenta portátil para Windows 10/11\nFontes de download: somente páginas oficiais e releases do GitHub."))
+        outer.addStretch()
+        return page
+
+    def _browse_installers(self):
+        path = QFileDialog.getExistingDirectory(self, "Escolha a pasta local de instaladores", self.installer_path_edit.text())
         if path:
-            self.config.installer_path = path
-            self.config.save()
-            self._append(f"Pasta local configurada: {path}")
+            self.installer_path_edit.setText(path)
+
+    def _save_settings(self):
+        self.config.installer_path = self.installer_path_edit.text().strip() or self.config.installer_path
+        self.config.theme = self.theme_combo.currentData()
+        self.config.cache_enabled = self.cache_checkbox.isChecked()
+        self.config.save()
+        apply_theme(self._app(), self.config.theme)
+        self._append("Configurações salvas.")
+
+    def _theme_changed(self):
+        if hasattr(self, "theme_combo"):
+            self.config.theme = self.theme_combo.currentData()
+            apply_theme(self._app(), self.config.theme)
 
     def _append(self, message: str):
         for log in self.log_widgets:
             log.appendPlainText(message)
 
     def closeEvent(self, event):
+        if hasattr(self, "installer_path_edit"):
+            self.config.installer_path = self.installer_path_edit.text().strip() or self.config.installer_path
+            self.config.theme = self.theme_combo.currentData()
+            self.config.cache_enabled = self.cache_checkbox.isChecked()
         self.config.save()
         super().closeEvent(event)

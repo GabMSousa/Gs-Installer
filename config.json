@@ -3,5 +3,6 @@
   "installer_path": "D:\\Ferramentas\\Instaladores",
   "selected_installers": [],
   "selected_cleanup_scripts": [],
-  "profile": ""
+  "profile": "",
+  "cache_enabled": true
 }

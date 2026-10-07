@@ -15,6 +15,7 @@ class AppConfig:
     selected_installers: list[str] = field(default_factory=list)
     selected_cleanup_scripts: list[str] = field(default_factory=list)
     profile: str = ""
+    cache_enabled: bool = True
 
     @classmethod
     def load(cls) -> "AppConfig":
@@ -27,6 +28,8 @@ class AppConfig:
                 for key in ("theme", "installer_path", "profile"):
                     if isinstance(data.get(key), str):
                         setattr(config, key, data[key])
+                if isinstance(data.get("cache_enabled"), bool):
+                    config.cache_enabled = data["cache_enabled"]
                 for key in ("selected_installers", "selected_cleanup_scripts"):
                     if isinstance(data.get(key), list):
                         setattr(config, key, [str(item) for item in data[key]])
@@ -42,5 +45,6 @@ class AppConfig:
             "selected_installers": self.selected_installers,
             "selected_cleanup_scripts": self.selected_cleanup_scripts,
             "profile": self.profile,
+            "cache_enabled": self.cache_enabled,
         }
         self.paths.config.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
