@@ -11,7 +11,11 @@ python -m app.main
 
 ## Build portátil
 
-Execute `.\build.ps1`. O resultado é `dist\GSInstaller.exe`, um executável único gerado pelo PyInstaller.
+Execute `.\build.ps1` ou `python build.py`. O resultado é `dist\NiniteTool\NiniteTool.exe`, um pacote `onedir` gerado pelo PyInstaller.
+
+O modo `onedir` mantém DLLs e arquivos auxiliares visíveis para facilitar suporte. O usuário pode copiar a pasta inteira para outra máquina Windows 10/11; `config.json`, `cache`, `logs` e `scripts` ficam ao lado do executável.
+
+Problemas conhecidos desta versão: páginas oficiais sem asset direto exigem download manual; operações de limpeza/desinstalação precisam de revisão e privilégios adequados; os cinco instaladores reais da Tarefa 05 não estavam disponíveis na pasta local usada para testes.
 
 ## Organização portátil
 
